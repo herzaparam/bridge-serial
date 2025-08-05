@@ -10,6 +10,13 @@ run-socket:
 build:
 	go build -o $(OUTPUT) $(ENTRY)
 
+clean:
+	rm -rf bin/*
+
+build-distribution:
+	./script/build-windows.sh
+	./script/build-macos.sh
+
 install:
 	./script/install.sh
 
@@ -21,4 +28,4 @@ help:
 	@echo "  install - Install the application"
 	@echo "  help - Show this help message"
 
-.PHONY: run build install help run-socket
+.PHONY: run build install help run-socket clean build-distribution
