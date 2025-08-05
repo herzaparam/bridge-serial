@@ -29,26 +29,29 @@ type BridgeManager struct {
 func NewBridgeManager(config *config.Config) *BridgeManager {
 	wsServer := socket.NewServer()
 
-	// Create HTTP server for WebSocket endpoints
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", wsServer.ServeWS)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		clientCount := wsServer.GetConnectedClientsCount()
-		fmt.Fprintf(w, `{"status":"ok","connected_clients":%d}`, clientCount)
-	})
-
-	httpServer := &http.Server{
-		Addr:    ":8001", // Use port from config or default
-		Handler: mux,
-	}
-
 	return &BridgeManager{
 		config:     config,
 		serial:     serial.NewSerialBridge(&config.SerialBridge),
 		wsServer:   wsServer,
-		httpServer: httpServer,
+		httpServer: nil, // Will be created fresh on each Start()
 		stopChan:   make(chan bool),
+	}
+}
+
+// createHTTPServer creates a new HTTP server instance
+func (bm *BridgeManager) createHTTPServer() *http.Server {
+	// Create HTTP server for WebSocket endpoints
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", bm.wsServer.ServeWS)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		clientCount := bm.wsServer.GetConnectedClientsCount()
+		fmt.Fprintf(w, `{"status":"ok","connected_clients":%d}`, clientCount)
+	})
+
+	return &http.Server{
+		Addr:    ":8001", // Use port from config or default
+		Handler: mux,
 	}
 }
 
@@ -64,12 +67,17 @@ func (bm *BridgeManager) Start() error {
 	// Create fresh stop channel for this start/stop cycle
 	bm.stopChan = make(chan bool)
 
+	// Create fresh HTTP server instance
+	bm.httpServer = bm.createHTTPServer()
+
 	// Start WebSocket server
 	bm.wsServer.Start()
 	logger.Info("WebSocket server started on :8001")
 
-	// Start HTTP server in goroutine
+	// Start HTTP server in goroutine and track it
+	bm.wg.Add(1)
 	go func() {
+		defer bm.wg.Done()
 		logger.Info("Starting HTTP server for WebSocket connections...")
 		logger.Info("WebSocket endpoint: ws://localhost:8001/ws")
 		logger.Info("Health check: http://localhost:8001/health")
@@ -77,6 +85,7 @@ func (bm *BridgeManager) Start() error {
 		if err := bm.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP server error: %v", err)
 		}
+		logger.Info("HTTP server goroutine stopped")
 	}()
 
 	// Connect to serial port
@@ -84,6 +93,13 @@ func (bm *BridgeManager) Start() error {
 	if err != nil {
 		logger.Error("failed to connect to serial port: %v", err)
 		bm.wsServer.Stop()
+		// Also shutdown the HTTP server we just created
+		if bm.httpServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			bm.httpServer.Shutdown(ctx)
+			cancel()
+			bm.httpServer = nil
+		}
 		return fmt.Errorf("failed to connect to serial port: %v", err)
 	}
 
@@ -127,20 +143,23 @@ func (bm *BridgeManager) Stop() error {
 		logger.Error("Timeout waiting for goroutines to stop")
 	}
 
-	// Disconnect from serial port
+	// Step 1: Stop WebSocket server (closes all client connections)
+	bm.wsServer.Stop()
+
+	// Step 2: Shutdown HTTP server (stops accepting new connections)
+	if bm.httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := bm.httpServer.Shutdown(ctx); err != nil {
+			logger.Error("HTTP server forced to shutdown: %v", err)
+		}
+		bm.httpServer = nil // Clear reference
+	}
+
+	// Step 3: Disconnect from serial port
 	err := bm.serial.Disconnect()
 	if err != nil {
 		logger.Error("error disconnecting from serial port: %v", err)
-	}
-
-	// Stop WebSocket server
-	bm.wsServer.Stop()
-
-	// Shutdown HTTP server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := bm.httpServer.Shutdown(ctx); err != nil {
-		logger.Error("HTTP server forced to shutdown: %v", err)
 	}
 
 	logger.Info("bridge stopped")

@@ -65,13 +65,78 @@ func NewServer() *Server {
 
 // Start starts the websocket server
 func (s *Server) Start() {
+	// Reset the server state for fresh start
+	s.resetServer()
+
 	go s.handleConnections()
 	logger.Info("WebSocket server started")
 }
 
+// resetServer reinitializes the server state for a fresh start
+func (s *Server) resetServer() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Cancel existing context if it exists
+	if s.cancel != nil {
+		s.cancel()
+	}
+
+	// Create fresh context
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+
+	// Clear any remaining clients safely
+	for client := range s.clients {
+		if client.conn != nil {
+			client.conn.Close()
+		}
+		if client.send != nil {
+			select {
+			case <-client.send:
+				// Drain the channel
+			default:
+			}
+			close(client.send)
+		}
+		delete(s.clients, client)
+	}
+
+	// Ensure clients map is fresh
+	s.clients = make(map[*Client]bool)
+
+	// Recreate channels
+	s.broadcast = make(chan Message)
+	s.register = make(chan *Client)
+	s.unregister = make(chan *Client)
+
+	logger.Info("WebSocket server state reset successfully")
+}
+
 // Stop stops the websocket server
 func (s *Server) Stop() {
-	s.cancel()
+	logger.Info("Stopping WebSocket server...")
+
+	// Cancel context to stop goroutines first
+	if s.cancel != nil {
+		s.cancel()
+	}
+
+	// Give goroutines a moment to stop gracefully
+	time.Sleep(100 * time.Millisecond)
+
+	// Close all client connections
+	s.mu.Lock()
+	for client := range s.clients {
+		if client.conn != nil {
+			client.conn.Close()
+		}
+		if client.send != nil {
+			close(client.send)
+		}
+		delete(s.clients, client)
+	}
+	s.mu.Unlock()
+
 	logger.Info("WebSocket server stopped")
 }
 
