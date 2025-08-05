@@ -40,7 +40,7 @@ type HTTPClientConfig struct {
 }
 
 type SocketConfig struct {
-	ServerURL     string
+	Port          string
 	RetryInterval time.Duration
 }
 
@@ -62,7 +62,7 @@ func LoadConfig(mode string) (*Config, error) {
 			BaseURL: "http://localhost:8080",
 		},
 		SocketConfig: SocketConfig{
-			ServerURL:     "http://localhost:8001",
+			Port:          ":8001",
 			RetryInterval: 5 * time.Second,
 		},
 	}, nil
