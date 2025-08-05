@@ -1,5 +1,5 @@
 ENTRY=cmd/app/main.go
-OUTPUT=bin/app
+OUTPUT=bin/rapier-bridge
 
 run:
 	go run $(ENTRY) --mode="development"
