@@ -31,34 +31,3 @@ func (r *App) createMainInterface() *fyne.Container {
 	)
 	return container.NewPadded(content)
 }
-
-func (a *App) createFormInterface() *fyne.Container {
-	// Title
-	title := widget.NewLabel("Rapier Bridge RS-232")
-	title.TextStyle = fyne.TextStyle{Bold: true}
-	title.Alignment = fyne.TextAlignCenter
-
-	// User credentials
-	userLabel := widget.NewLabel("Username:")
-	a.userInput = widget.NewEntry()
-	a.userInput.SetPlaceHolder("Enter username")
-
-	passwordLabel := widget.NewLabel("Password:")
-	a.passwordInput = widget.NewPasswordEntry()
-	a.passwordInput.SetPlaceHolder("Enter password")
-
-	a.verifyButton = widget.NewButton("Verify", a.onVerifyClick)
-
-	// Main layout - everything in one window
-	content := container.NewVBox(
-		title,
-		widget.NewSeparator(),
-		userLabel,
-		a.userInput,
-		passwordLabel,
-		a.passwordInput,
-		widget.NewSeparator(),
-		a.verifyButton,
-	)
-	return container.NewPadded(content)
-}
