@@ -179,19 +179,6 @@ func (s *Server) handleConnections() {
 
 // ServeWS handles websocket connections
 func (s *Server) ServeWS(w http.ResponseWriter, r *http.Request) {
-	// Get token from query parameter
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		http.Error(w, "Missing token parameter", http.StatusUnauthorized)
-		return
-	}
-
-	// Validate token (implement your authentication logic here)
-	if !s.validateToken(token) {
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
-		return
-	}
-
 	// Upgrade HTTP connection to WebSocket
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -214,14 +201,6 @@ func (s *Server) ServeWS(w http.ResponseWriter, r *http.Request) {
 	// Start client goroutines
 	go client.writePump()
 	go client.readPump()
-}
-
-// validateToken validates the authentication token
-// Implement your authentication logic here
-func (s *Server) validateToken(token string) bool {
-	// For demo purposes, accept any non-empty token
-	// In production, implement proper token validation
-	return len(token) > 0
 }
 
 // BroadcastMessage broadcasts a message to all connected clients
